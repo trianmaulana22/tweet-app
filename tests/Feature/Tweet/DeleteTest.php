@@ -13,6 +13,8 @@ class DeleteTest extends TestCase
     /**
      * A basic feature test example.
      */
+    use RefreshDatabase;
+    
     public function test_delete_successed()
     {
         $user = User::factory()->create();

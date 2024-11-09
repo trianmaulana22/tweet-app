@@ -21,8 +21,6 @@ use PHPUnit\Util\Cloner;
 use SebastianBergmann\Exporter\Exporter;
 
 /**
- * @no-named-arguments Parameter names are not covered by the backward compatibility promise for PHPUnit
- *
  * @internal This class is not covered by the backward compatibility promise for PHPUnit
  */
 final class Invocation implements SelfDescribing
@@ -107,13 +105,6 @@ final class Invocation implements SelfDescribing
      */
     public function generateReturnValue(): mixed
     {
-        if ($this->returnType === 'never') {
-            throw new NeverReturningMethodException(
-                $this->className,
-                $this->methodName,
-            );
-        }
-
         if ($this->isReturnTypeNullable || $this->proxiedCall) {
             return null;
         }
