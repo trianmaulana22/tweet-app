@@ -15,8 +15,8 @@ class ImageFactory extends Factory
     public function definition()
     {
         // ディレクトリがなければ作成する
-        if (!Storage::exists('public/images')) {
-            Storage::makeDirectory('public/images');
+        if (!Storage::exists('public/app/images')) {
+            Storage::makeDirectory('public/app/images');
         }
         return [
             'name' => $this->faker->image(storage_path('app/public/images'), 640, 480, null, false)
