@@ -6,9 +6,19 @@ use Closure;
 
 class MultiSearchPrompt extends Prompt
 {
-    use Concerns\Scrolling;
+    use Concerns\ReducesScrollingToFitTerminal;
     use Concerns\Truncation;
     use Concerns\TypedValue;
+
+    /**
+     * The index of the highlighted option.
+     */
+    public ?int $highlighted = null;
+
+    /**
+     * The index of the first visible option.
+     */
+    public int $firstVisible = 0;
 
     /**
      * The cached matches.
@@ -16,11 +26,6 @@ class MultiSearchPrompt extends Prompt
      * @var array<int|string, string>|null
      */
     protected ?array $matches = null;
-
-    /**
-     * Whether the matches are initially a list.
-     */
-    protected bool $isList;
 
     /**
      * The selected values.
@@ -40,22 +45,17 @@ class MultiSearchPrompt extends Prompt
         public string $placeholder = '',
         public int $scroll = 5,
         public bool|string $required = false,
-        public mixed $validate = null,
+        public ?Closure $validate = null,
         public string $hint = '',
-        public ?Closure $transform = null,
     ) {
-        $this->trackTypedValue(submit: false, ignore: fn ($key) => Key::oneOf([Key::SPACE, Key::HOME, Key::END, Key::CTRL_A, Key::CTRL_E], $key) && $this->highlighted !== null);
+        $this->trackTypedValue(submit: false, ignore: fn ($key) => $key === Key::SPACE && $this->highlighted !== null);
 
-        $this->initializeScrolling(null);
+        $this->reduceScrollingToFitTerminal();
 
         $this->on('key', fn ($key) => match ($key) {
-            Key::UP, Key::UP_ARROW, Key::SHIFT_TAB => $this->highlightPrevious(count($this->matches), true),
-            Key::DOWN, Key::DOWN_ARROW, Key::TAB => $this->highlightNext(count($this->matches), true),
-            Key::oneOf(Key::HOME, $key) => $this->highlighted !== null ? $this->highlight(0) : null,
-            Key::oneOf(Key::END, $key) => $this->highlighted !== null ? $this->highlight(count($this->matches()) - 1) : null,
+            Key::UP, Key::UP_ARROW, Key::SHIFT_TAB => $this->highlightPrevious(),
+            Key::DOWN, Key::DOWN_ARROW, Key::TAB => $this->highlightNext(),
             Key::SPACE => $this->highlighted !== null ? $this->toggleHighlighted() : null,
-            Key::CTRL_A => $this->highlighted !== null ? $this->toggleAll() : null,
-            Key::CTRL_E => null,
             Key::ENTER => $this->submit(),
             Key::LEFT, Key::LEFT_ARROW, Key::RIGHT, Key::RIGHT_ARROW => $this->highlighted = null,
             default => $this->search(),
@@ -104,25 +104,16 @@ class MultiSearchPrompt extends Prompt
             return $this->matches;
         }
 
-        $matches = ($this->options)($this->typedValue);
+        if (strlen($this->typedValue) === 0) {
+            $matches = ($this->options)($this->typedValue);
 
-        if (! isset($this->isList) && count($matches) > 0) {
-            // This needs to be captured the first time we receive matches so
-            // we know what we're dealing with later if matches is empty.
-            $this->isList = array_is_list($matches);
+            return $this->matches = [
+                ...array_diff($this->values, $matches),
+                ...$matches,
+            ];
         }
 
-        if (! isset($this->isList)) {
-            return $this->matches = [];
-        }
-
-        if (strlen($this->typedValue) > 0) {
-            return $this->matches = $matches;
-        }
-
-        return $this->matches = $this->isList
-            ? [...array_diff(array_values($this->values), $matches), ...$matches]
-            : array_diff($this->values, $matches) + $matches;
+        return $this->matches = ($this->options)($this->typedValue);
     }
 
     /**
@@ -136,23 +127,44 @@ class MultiSearchPrompt extends Prompt
     }
 
     /**
-     * Toggle all options.
+     * Highlight the previous entry, or wrap around to the last entry.
      */
-    protected function toggleAll(): void
+    protected function highlightPrevious(): void
     {
-        $allMatchesSelected = collect($this->matches)->every(fn ($label, $key) => $this->isList()
-            ? array_key_exists($label, $this->values)
-            : array_key_exists($key, $this->values));
-
-        if ($allMatchesSelected) {
-            $this->values = array_filter($this->values, fn ($value) => $this->isList()
-                ? ! in_array($value, $this->matches)
-                : ! array_key_exists(array_search($value, $this->matches), $this->matches)
-            );
+        if ($this->matches === []) {
+            $this->highlighted = null;
+        } elseif ($this->highlighted === null) {
+            $this->highlighted = count($this->matches) - 1;
+        } elseif ($this->highlighted === 0) {
+            $this->highlighted = null;
         } else {
-            $this->values = $this->isList()
-                ? array_merge($this->values, array_combine(array_values($this->matches), array_values($this->matches)))
-                : array_merge($this->values, array_combine(array_keys($this->matches), array_values($this->matches)));
+            $this->highlighted = $this->highlighted - 1;
+        }
+
+        if ($this->highlighted < $this->firstVisible) {
+            $this->firstVisible--;
+        } elseif ($this->highlighted === count($this->matches) - 1) {
+            $this->firstVisible = count($this->matches) - min($this->scroll, count($this->matches));
+        }
+    }
+
+    /**
+     * Highlight the next entry, or wrap around to the first entry.
+     */
+    protected function highlightNext(): void
+    {
+        if ($this->matches === []) {
+            $this->highlighted = null;
+        } elseif ($this->highlighted === null) {
+            $this->highlighted = 0;
+        } else {
+            $this->highlighted = $this->highlighted === count($this->matches) - 1 ? null : $this->highlighted + 1;
+        }
+
+        if ($this->highlighted > $this->firstVisible + $this->scroll - 1) {
+            $this->firstVisible++;
+        } elseif ($this->highlighted === 0 || $this->highlighted === null) {
+            $this->firstVisible = 0;
         }
     }
 
@@ -161,7 +173,7 @@ class MultiSearchPrompt extends Prompt
      */
     protected function toggleHighlighted(): void
     {
-        if ($this->isList()) {
+        if (array_is_list($this->matches)) {
             $label = $this->matches[$this->highlighted];
             $key = $label;
         } else {
@@ -202,13 +214,5 @@ class MultiSearchPrompt extends Prompt
     public function labels(): array
     {
         return array_values($this->values);
-    }
-
-    /**
-     * Whether the matches are initially a list.
-     */
-    public function isList(): bool
-    {
-        return $this->isList;
     }
 }

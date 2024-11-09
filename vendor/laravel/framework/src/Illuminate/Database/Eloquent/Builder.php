@@ -97,31 +97,29 @@ class Builder implements BuilderContract
         'avg',
         'count',
         'dd',
-        'ddrawsql',
-        'doesntexist',
-        'doesntexistor',
+        'ddRawSql',
+        'doesntExist',
+        'doesntExistOr',
         'dump',
-        'dumprawsql',
+        'dumpRawSql',
         'exists',
-        'existsor',
+        'existsOr',
         'explain',
-        'getbindings',
-        'getconnection',
-        'getgrammar',
-        'getrawbindings',
+        'getBindings',
+        'getConnection',
+        'getGrammar',
         'implode',
         'insert',
-        'insertgetid',
-        'insertorignore',
-        'insertusing',
-        'insertorignoreusing',
+        'insertGetId',
+        'insertOrIgnore',
+        'insertUsing',
         'max',
         'min',
         'raw',
-        'rawvalue',
+        'rawValue',
         'sum',
-        'tosql',
-        'torawsql',
+        'toSql',
+        'toRawSql',
     ];
 
     /**
@@ -565,11 +563,11 @@ class Builder implements BuilderContract
      */
     public function firstOrCreate(array $attributes = [], array $values = [])
     {
-        if (! is_null($instance = (clone $this)->where($attributes)->first())) {
+        if (! is_null($instance = $this->where($attributes)->first())) {
             return $instance;
         }
 
-        return $this->createOrFirst($attributes, $values);
+        return $this->create(array_merge($attributes, $values));
     }
 
     /**
@@ -597,10 +595,8 @@ class Builder implements BuilderContract
      */
     public function updateOrCreate(array $attributes, array $values = [])
     {
-        return tap($this->firstOrCreate($attributes, $values), function ($instance) use ($values) {
-            if (! $instance->wasRecentlyCreated) {
-                $instance->fill($values)->save();
-            }
+        return tap($this->firstOrNew($attributes), function ($instance) use ($values) {
+            $instance->fill($values)->save();
         });
     }
 
@@ -1455,9 +1451,9 @@ class Builder implements BuilderContract
         // Here we'll check if the given subset of where clauses contains any "or"
         // booleans and in this case create a nested where expression. That way
         // we don't add any unnecessary nesting thus keeping the query clean.
-        if ($whereBooleans->contains(fn ($logicalOperator) => str_contains($logicalOperator, 'or'))) {
+        if ($whereBooleans->contains('or')) {
             $query->wheres[] = $this->createNestedWhere(
-                $whereSlice, str_replace(' not', '', $whereBooleans->first())
+                $whereSlice, $whereBooleans->first()
             );
         } else {
             $query->wheres = array_merge($query->wheres, $whereSlice);
@@ -1729,18 +1725,6 @@ class Builder implements BuilderContract
     }
 
     /**
-     * Get the Eloquent builder instances that are used in the union of the query.
-     *
-     * @return \Illuminate\Support\Collection
-     */
-    protected function getUnionBuilders()
-    {
-        return isset($this->query->unions)
-            ? collect($this->query->unions)->pluck('query')
-            : collect();
-    }
-
-    /**
      * Get the underlying query builder instance.
      *
      * @return \Illuminate\Database\Query\Builder
@@ -1978,7 +1962,7 @@ class Builder implements BuilderContract
             return $this->callNamedScope($method, $parameters);
         }
 
-        if (in_array(strtolower($method), $this->passthru)) {
+        if (in_array($method, $this->passthru)) {
             return $this->toBase()->{$method}(...$parameters);
         }
 

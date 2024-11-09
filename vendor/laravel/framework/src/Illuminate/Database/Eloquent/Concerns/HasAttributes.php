@@ -39,7 +39,6 @@ use LogicException;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
-use RuntimeException;
 
 trait HasAttributes
 {
@@ -1271,11 +1270,7 @@ trait HasAttributes
      */
     public function fromJson($value, $asObject = false)
     {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return Json::decode($value, ! $asObject);
+        return Json::decode($value ?? '', ! $asObject);
     }
 
     /**
@@ -1321,19 +1316,7 @@ trait HasAttributes
      */
     protected function castAttributeAsHashedString($key, $value)
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (! Hash::isHashed($value)) {
-            return Hash::make($value);
-        }
-
-        if (! Hash::verifyConfiguration($value)) {
-            throw new RuntimeException("Could not verify the hashed value's configuration.");
-        }
-
-        return $value;
+        return $value !== null && ! Hash::isHashed($value) ? Hash::make($value) : $value;
     }
 
     /**
@@ -2043,16 +2026,6 @@ trait HasAttributes
     }
 
     /**
-     * Get the attributes that have been changed since the last sync for an update operation.
-     *
-     * @return array
-     */
-    protected function getDirtyForUpdate()
-    {
-        return $this->getDirty();
-    }
-
-    /**
      * Get the attributes that were changed when the model was last saved.
      *
      * @return array
@@ -2130,13 +2103,6 @@ trait HasAttributes
         // an appropriate native PHP type dependent upon the associated value
         // given with the key in the pair. Dayle made this comment line up.
         if ($this->hasCast($key)) {
-            if (static::preventsAccessingMissingAttributes() &&
-                ! array_key_exists($key, $this->attributes) &&
-                ($this->isEnumCastable($key) ||
-                 in_array($this->getCastType($key), static::$primitiveCastTypes))) {
-                $this->throwMissingAttributeExceptionIfApplicable($key);
-            }
-
             return $this->castAttribute($key, $value);
         }
 
